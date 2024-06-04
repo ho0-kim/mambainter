@@ -27,7 +27,7 @@ from core.dist import (
 parser = argparse.ArgumentParser()
 parser.add_argument('-c',
                     '--config',
-                    default='configs/train_propainter.json',
+                    default='configs/train_mambainter.json',
                     type=str)
 parser.add_argument('-p', '--port', default='23490', type=str)
 args = parser.parse_args()

@@ -65,7 +65,12 @@ class TrainDataset(torch.utils.data.Dataset):
         remain_idx = list(set(complete_idx_set) - set(local_idx))
         ref_index = sorted(random.sample(remain_idx, num_ref_frame))
 
-        return local_idx + ref_index
+        # HOYOUNG
+        local_mask = [True for _ in range(len(local_idx))]
+        ref_mask = [False for _ in range(len(ref_index))]
+        idx, idx_mask = zip(*sorted(zip(local_idx+ref_index, local_mask+ref_mask), key=lambda x: x[0]))
+
+        return idx, idx_mask
 
     def __getitem__(self, index):
         video_name = self.video_names[index]
@@ -73,8 +78,7 @@ class TrainDataset(torch.utils.data.Dataset):
         all_masks = create_random_shape_with_random_motion(
             self.video_dict[video_name], imageHeight=self.h, imageWidth=self.w)
 
-        # create sample index
-        selected_index = self._sample_index(self.video_dict[video_name],
+        selected_index, selected_idxmask = self._sample_index(self.video_dict[video_name],
                                             self.num_local_frames,
                                             self.num_ref_frames)
 
@@ -131,11 +135,10 @@ class TrainDataset(torch.utils.data.Dataset):
             flows_f = torch.from_numpy(flows_f).permute(3, 2, 0, 1).contiguous().float()
             flows_b = torch.from_numpy(flows_b).permute(3, 2, 0, 1).contiguous().float()
 
-        # img [-1,1] mask [0,1]
         if self.load_flow:
-            return frame_tensors, mask_tensors, flows_f, flows_b, video_name
+            return frame_tensors, mask_tensors, flows_f, flows_b, video_name, selected_index, selected_idxmask
         else:
-            return frame_tensors, mask_tensors, 'None', 'None', video_name
+            return frame_tensors, mask_tensors, 'None', 'None', video_name, selected_index, selected_idxmask
 
 
 class TestDataset(torch.utils.data.Dataset):

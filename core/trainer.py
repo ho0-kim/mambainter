@@ -22,6 +22,10 @@ from model.recurrent_flow_completion import RecurrentFlowCompleteNet
 
 from RAFT.utils.flow_viz_pt import flow_to_image
 
+#HOYOUNG
+import numpy as np
+torch.autograd.set_detect_anomaly(True)
+
 
 class Trainer:
     def __init__(self, config):
@@ -353,15 +357,18 @@ class Trainer:
         train_data = self.prefetcher.next()
         while train_data is not None:
             self.iteration += 1
-            frames, masks, flows_f, flows_b, _ = train_data
+            frames, masks, flows_f, flows_b, _, selected_index, selected_idxmask = train_data
             frames, masks = frames.to(device), masks.to(device).float()
             l_t = self.num_local_frames
             b, t, c, h, w = frames.size()
-            gt_local_frames = frames[:, :l_t, ...]
-            local_masks = masks[:, :l_t, ...].contiguous()
+            _index_mask = np.array(selected_idxmask)
+            _local_index = np.where(_index_mask)[0].tolist()
+            _ref_index = np.where(~_index_mask)[0].tolist()
+            gt_local_frames = frames[:, _local_index, ...]
+            local_masks = masks[:, _local_index, ...].contiguous()
 
             masked_frames = frames * (1 - masks)
-            masked_local_frames = masked_frames[:, :l_t, ...]
+            masked_local_frames = masked_frames[:, _local_index, ...]
             # get gt optical flow
             if flows_f[0] == 'None' or flows_b[0] == 'None':
                 gt_flows_bi = self.fix_raft(gt_local_frames)
@@ -374,19 +381,19 @@ class Trainer:
             # pred_flows_bi = gt_flows_bi
 
             # ---- image propagation ----
-            prop_imgs, updated_local_masks = self.netG.module.img_propagation(masked_local_frames, pred_flows_bi, local_masks, interpolation=self.interp_mode)
+            prop_imgs, updated_local_masks = self.netG.img_propagation(masked_local_frames, pred_flows_bi, local_masks, interpolation=self.interp_mode)
             updated_masks = masks.clone()
-            updated_masks[:, :l_t, ...] = updated_local_masks.view(b, l_t, 1, h, w)
+            updated_masks[:, _local_index, ...] = updated_local_masks.view(b, l_t, 1, h, w)
             updated_frames = masked_frames.clone()
             prop_local_frames = gt_local_frames * (1-local_masks) + prop_imgs.view(b, l_t, 3, h, w) * local_masks # merge
-            updated_frames[:, :l_t, ...] = prop_local_frames
+            updated_frames[:, _local_index, ...] = prop_local_frames
 
             # ---- feature propagation + Transformer ----
-            pred_imgs = self.netG(updated_frames, pred_flows_bi, masks, updated_masks, l_t)
+            pred_imgs = self.netG(updated_frames, pred_flows_bi, masks, updated_masks, l_t, selected_index, selected_idxmask)
             pred_imgs = pred_imgs.view(b, -1, c, h, w)
 
             # get the local frames
-            pred_local_frames = pred_imgs[:, :l_t, ...]
+            pred_local_frames = pred_imgs[:, _local_index, ...]
             comp_local_frames = gt_local_frames * (1. - local_masks) +  pred_local_frames * local_masks
             comp_imgs = frames * (1. - masks) + pred_imgs * masks
 

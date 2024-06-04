@@ -112,22 +112,27 @@
 1. Clone Repo
 
    ```bash
-   git clone https://github.com/sczhou/ProPainter.git
+   git clone https://github.com/ho0-kim/mambainter.git
    ```
 
 2. Create Conda Environment and Install Dependencies
 
    ```bash
    # create new anaconda env
-   conda create -n propainter python=3.8 -y
-   conda activate propainter
+   conda create -n mambainter python=3.8 -y
+   conda activate mambainter
 
    # install python dependencies
    pip3 install -r requirements.txt
+   cd causal-conv1d
+   pip install .
+   cd ../mamba
+   pip install .
    ```
 
-   - CUDA >= 9.2
-   - PyTorch >= 1.7.1
+   - LINUX
+   - CUDA >= 11.6
+   - PyTorch >= 1.12
    - Torchvision >= 0.8.2
    - Other required packages in `requirements.txt`
 

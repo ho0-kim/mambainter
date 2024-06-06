@@ -278,8 +278,8 @@ class TemporalPositionalEncoding(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
         self.max_len = max_len
         position = torch.arange(max_len).unsqueeze(1) - max_len//2
-        # div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
-        div_term = torch.exp(torch.arange(0, 20*36*d_model, 2) * (-math.log(10000.0) / 20*36*d_model))
+        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
+        # div_term = torch.exp(torch.arange(0, 20*36*d_model, 2) * (-math.log(10000.0) / 20*36*d_model))
         # pe = torch.zeros(max_len, 1, d_model)
         # pe[:, 0, 0::2] = torch.sin(position * div_term)
         # pe[:, 0, 1::2] = torch.cos(position * div_term)
@@ -297,10 +297,10 @@ class TemporalPositionalEncoding(nn.Module):
         center_index = np.sum(index_list[_mask_[0], _mask_[1]].reshape(b, -1), axis=1)//n_local_frames
         relative_index = []
         for i in range(b):
-            relative_index += [(index - center_index[i] + self.max_len//2).item() for index in index_list[i]]
+            for _ in range(n):
+                relative_index += [(index - center_index[i] + self.max_len//2).item() for index in index_list[i]]
         # b, f_l, c, h, w = x.size()
-        x = rearrange(x, 'b n t m -> (b n) t m', b=b, t=t)
-        x = x + self.pe[:, relative_index].view(b*n, -1, c)
+        x = x + self.pe[:, relative_index].view(b, n, t, c)
         # x = x + self.pe[:, relative_index]
         return self.dropout(x)
 
@@ -366,7 +366,7 @@ class InpaintGenerator(BaseNetwork):
         self.checkpoint_num = checkpoint_num
         
         # positional embedding
-        self.pos_embed = nn.Parameter(torch.zeros(1, 20*32, d_model))
+        self.pos_embed = nn.Parameter(torch.zeros(1, 20*36, d_model))
 
         # temporal pos encoder
         self.temp_pos_encoder = TemporalPositionalEncoding(d_model, dropout=tempos_droprate) # channel * image_height//12 * image_width // 12
@@ -432,7 +432,7 @@ class InpaintGenerator(BaseNetwork):
         x = x + self.pos_embed
         x = rearrange(x, '(b t) n m -> b n t m', b=B, t=T)
         x = self.temp_pos_encoder(x, index_list, index_mask)
-        x = rearrange(x, '(b n) t m -> b (t n) m', b=B, t=T)
+        x = rearrange(x, 'b n t m -> b (t n) m', b=B, t=T)
 
         # mamba impl
         residual = None

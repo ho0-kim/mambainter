@@ -283,18 +283,15 @@ class TemporalPositionalEncoding(nn.Module):
         # pe = torch.zeros(max_len, 1, d_model)
         # pe[:, 0, 0::2] = torch.sin(position * div_term)
         # pe[:, 0, 1::2] = torch.cos(position * div_term)
-        pe = torch.zeros(1, max_len, 20*36*d_model) 
+        pe = torch.zeros(1, max_len, d_model) 
         pe[0, :, 0::2] = torch.sin(position * div_term)
         pe[0, :, 1::2] = torch.cos(position * div_term)
         # pe = pe.view(1, max_len, 128, 60, 108)
-        pe = pe.view(1, max_len, 20, 36, d_model)
+        # pe = pe.view(1, max_len, 20, 36, d_model)
         self.register_buffer('pe', pe)
 
     def forward(self, x, index_list, index_mask):
-        b, t, c, h, w = x.size() # x: torch.Size([batch_size, seq_length, 20, 36, 512])
-        # if b == 1:
-        #     index_list = index_list[np.newaxis, :]
-        #     index_mask = index_mask[np.newaxis, :]
+        b, n, t, c = x.size() # x: torch.Size([batch_size, seq_length, 20, 36, 512])
         _mask_ = np.where(index_mask)
         n_local_frames = np.sum(index_mask, axis=1)
         center_index = np.sum(index_list[_mask_[0], _mask_[1]].reshape(b, -1), axis=1)//n_local_frames
@@ -302,7 +299,8 @@ class TemporalPositionalEncoding(nn.Module):
         for i in range(b):
             relative_index += [(index - center_index[i] + self.max_len//2).item() for index in index_list[i]]
         # b, f_l, c, h, w = x.size()
-        x = x + self.pe[:, relative_index].view(b, -1, c, h, w)
+        x = rearrange(x, 'b n t m -> (b n) t m', b=b, t=t)
+        x = x + self.pe[:, relative_index].view(b*n, -1, c)
         # x = x + self.pe[:, relative_index]
         return self.dropout(x)
 
@@ -366,9 +364,12 @@ class InpaintGenerator(BaseNetwork):
 
         self.use_checkpoint = use_checkpoint
         self.checkpoint_num = checkpoint_num
+        
+        # positional embedding
+        self.pos_embed = nn.Parameter(torch.zeros(1, 20*32, d_model))
 
         # temporal pos encoder
-        self.pos_encoder = TemporalPositionalEncoding(d_model, dropout=tempos_droprate) # channel * image_height//12 * image_width // 12
+        self.temp_pos_encoder = TemporalPositionalEncoding(d_model, dropout=tempos_droprate) # channel * image_height//12 * image_width // 12
 
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depths)]  # stochastic depth decay rule
         inter_dpr = [0.0] + dpr
@@ -396,6 +397,8 @@ class InpaintGenerator(BaseNetwork):
         self.norm_f = (nn.LayerNorm if not rms_norm else RMSNorm)(d_model, eps=norm_epsilon, **factory_kwargs)
 
         self.apply(segm_init_weights)
+        trunc_normal_(self.pos_embed, std=.02)
+
         # mamba init
         self.apply(
             partial(
@@ -423,11 +426,13 @@ class InpaintGenerator(BaseNetwork):
         return prop_frames, updated_masks
 
     def forward_features(self, x, index_list, index_mask, inference_params=None):
-        x = self.pos_encoder(x, index_list, index_mask)
-
         B, T, H, W, C = x.shape
         x = x.reshape(B * T, H * W, C)
-        x = rearrange(x, '(b t) n m -> b (t n) m', b=B, t=T)
+
+        x = x + self.pos_embed
+        x = rearrange(x, '(b t) n m -> b n t m', b=B, t=T)
+        x = self.temp_pos_encoder(x, index_list, index_mask)
+        x = rearrange(x, '(b n) t m -> b (t n) m', b=B, t=T)
 
         # mamba impl
         residual = None
@@ -476,10 +481,6 @@ class InpaintGenerator(BaseNetwork):
         # HOYOUNG
         _index_mask = np.array(index_mask).transpose()
         _index_list = np.array(index_list).transpose()
-        # if b == 1:
-        #     _local_index = np.where(_index_mask)[0].tolist()
-        #     _ref_index = np.where(~_index_mask)[0].tolist()
-        # else:
         _local_index = np.where(_index_mask)
         _ref_index = np.where(~_index_mask)
 
@@ -488,10 +489,6 @@ class InpaintGenerator(BaseNetwork):
                                         masks_in.view(b * t, 1, ori_h, ori_w),
                                         masks_updated.view(b * t, 1, ori_h, ori_w)], dim=1))
         _, c, h, w = enc_feat.size()
-        # if b == 1:
-        #     local_feat = enc_feat.view(b, t, c, h, w)[:, _local_index, ...]
-        #     ref_feat = enc_feat.view(b, t, c, h, w)[:, _ref_index, ...] 
-        # else:
         local_feat = enc_feat.view(b, t, c, h, w)[_local_index[0], _local_index[1], ...].view(b, l_t, c, h, w)
         ref_feat = enc_feat.view(b, t, c, h, w)[_ref_index[0], _ref_index[1], ...].view(b, t-l_t, c, h, w)
         fold_feat_size = (h, w)
@@ -500,10 +497,6 @@ class InpaintGenerator(BaseNetwork):
         ds_flows_b = F.interpolate(completed_flows[1].view(-1, 2, ori_h, ori_w), scale_factor=1/4, mode='bilinear', align_corners=False).view(b, l_t-1, 2, h, w)/4.0
         ds_mask_in = F.interpolate(masks_in.reshape(-1, 1, ori_h, ori_w), scale_factor=1/4, mode='nearest').view(b, t, 1, h, w)
         
-        # if b == 1:
-        #     ds_mask_in_local = ds_mask_in[:, _local_index]
-        #     ds_mask_updated_local =  F.interpolate(masks_updated[:,_local_index].reshape(-1, 1, ori_h, ori_w), scale_factor=1/4, mode='nearest').view(b, l_t, 1, h, w)
-        # else:
         ds_mask_in_local = ds_mask_in[_local_index[0], _local_index[1]].view(b, l_t, 1, h, w)
         ds_mask_updated_local =  F.interpolate(masks_updated[_local_index[0], _local_index[1]].reshape(-1, 1, ori_h, ori_w), scale_factor=1/4, mode='nearest').view(b, l_t, 1, h, w)
 
@@ -518,11 +511,7 @@ class InpaintGenerator(BaseNetwork):
 
         prop_mask_in = torch.cat([ds_mask_in_local, ds_mask_updated_local], dim=2)
         _, _, local_feat, _ = self.feat_prop_module(local_feat, ds_flows_f, ds_flows_b, prop_mask_in, interpolation)
-        # if b == 1:
-        #     enc_feat = torch.cat((ref_feat[:, :_local_index[0], ...],
-        #                         local_feat,
-        #                         ref_feat[:, _local_index[0]:, ...]), dim=1)
-        # else:
+        
         enc_feat = enc_feat.view(b, t, c, h, w).clone()
         enc_feat[_local_index[0], _local_index[1], ...] = local_feat.view(b*l_t, c, h, w)
 
@@ -540,9 +529,6 @@ class InpaintGenerator(BaseNetwork):
             output = self.decoder(enc_feat.view(-1, c, h, w))
             output = torch.tanh(output).view(b, t, 3, ori_h, ori_w)
         else:
-            # if b == 1:
-            #     output = self.decoder(enc_feat[:, _local_index].view(-1, c, h, w))
-            # else:
             output = self.decoder(enc_feat[_local_index[0], _local_index[1]].view(-1, c, h, w))
             output = torch.tanh(output).view(b, l_t, 3, ori_h, ori_w)
 

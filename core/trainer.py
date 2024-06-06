@@ -362,21 +362,12 @@ class Trainer:
             l_t = self.num_local_frames
             b, t, c, h, w = frames.size()
             _index_mask = np.array(selected_idxmask).transpose()
-            # if b == 1:
-            #     _local_index = np.where(_index_mask)[0].tolist()
-            #     _ref_index = np.where(~_index_mask)[0].tolist()
-            #     gt_local_frames = frames[:, _local_index, ...]
-            #     local_masks = masks[:, _local_index, ...].contiguous()
-            # else:
             _local_index = np.where(_index_mask)
             _ref_index = np.where(~_index_mask)
             gt_local_frames = frames[_local_index[0], _local_index[1], ...].reshape(b, l_t, c, h ,w)
             local_masks = masks[_local_index[0], _local_index[1], ...].reshape(b, l_t, 1, h ,w).contiguous()
 
             masked_frames = frames * (1 - masks)
-            # if b == 1:
-            #     masked_local_frames = masked_frames[:, _local_index, ...]
-            # else:
             masked_local_frames = masked_frames[_local_index[0], _local_index[1], ...].reshape(b, l_t, c, h, w)
             # get gt optical flow
             if flows_f[0] == 'None' or flows_b[0] == 'None':
@@ -392,15 +383,9 @@ class Trainer:
             # ---- image propagation ----
             prop_imgs, updated_local_masks = self.netG.img_propagation(masked_local_frames, pred_flows_bi, local_masks, interpolation=self.interp_mode)
             updated_masks = masks.clone()
-            # if b == 1:
-            #     updated_masks[:, _local_index, ...] = updated_local_masks.view(b, l_t, 1, h, w)
-            # else:
             updated_masks[_local_index[0], _local_index[1], ...] = updated_local_masks.view(b*l_t, 1, h, w)
             updated_frames = masked_frames.clone()
             prop_local_frames = gt_local_frames * (1-local_masks) + prop_imgs.view(b, l_t, 3, h, w) * local_masks # merge
-            # if b == 1:
-            #     updated_frames[:, _local_index, ...] = prop_local_frames
-            # else:
             updated_frames[_local_index[0], _local_index[1], ...] = prop_local_frames.view(b*l_t, 3, h, w)
 
             # ---- feature propagation + Transformer ----
@@ -408,9 +393,6 @@ class Trainer:
             pred_imgs = pred_imgs.view(b, -1, c, h, w)
 
             # get the local frames
-            # if b == 1:
-            #     pred_local_frames = pred_imgs[:, _local_index, ...]
-            # else:
             pred_local_frames = pred_imgs[_local_index[0], _local_index[1], ...].view(b, l_t, 3, h, w)
             comp_local_frames = gt_local_frames * (1. - local_masks) +  pred_local_frames * local_masks
             comp_imgs = frames * (1. - masks) + pred_imgs * masks

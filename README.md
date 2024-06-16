@@ -131,6 +131,7 @@
    ```
 
    - LINUX
+   - python >= 3.9
    - CUDA >= 11.6
    - PyTorch >= 1.12
    - Torchvision >= 0.8.2

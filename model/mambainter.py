@@ -272,37 +272,32 @@ class deconv(nn.Module):
         return self.conv(x)
 
 # HOYOUNG
-class TemporalPositionalEncoding(nn.Module):
+class TemporalPositionalEmbedding(nn.Module):
     def __init__(self, d_model:int, max_len:int=1000, dropout=0.1):
-        super(TemporalPositionalEncoding, self).__init__()
+        super(TemporalPositionalEmbedding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
         self.max_len = max_len
-        position = torch.arange(max_len).unsqueeze(1) - max_len//2
-        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
-        # div_term = torch.exp(torch.arange(0, 20*36*d_model, 2) * (-math.log(10000.0) / 20*36*d_model))
-        # pe = torch.zeros(max_len, 1, d_model)
-        # pe[:, 0, 0::2] = torch.sin(position * div_term)
-        # pe[:, 0, 1::2] = torch.cos(position * div_term)
-        pe = torch.zeros(1, max_len, d_model) 
-        pe[0, :, 0::2] = torch.sin(position * div_term)
-        pe[0, :, 1::2] = torch.cos(position * div_term)
-        # pe = pe.view(1, max_len, 128, 60, 108)
-        # pe = pe.view(1, max_len, 20, 36, d_model)
-        self.register_buffer('pe', pe)
+        self.t_pos_emb = nn.Sequential(
+            nn.Linear(1, d_model//4),
+            nn.Linear(d_model//4, d_model))
+
+        trunc_normal_(self.t_pos_emb, std=.02)
 
     def forward(self, x, index_list, index_mask):
         b, n, t, c = x.size() # x: torch.Size([batch_size, seq_length, 20, 36, 512])
         _mask_ = np.where(index_mask)
         n_local_frames = np.sum(index_mask, axis=1)
         center_index = np.sum(index_list[_mask_[0], _mask_[1]].reshape(b, -1), axis=1)//n_local_frames
-        relative_index = []
+        
+        pe_list = []
         for i in range(b):
+            relative_index = [(index - center_index[i]).item() for index in index_list[i]] # t
+            emb = self.t_pos_emb(relative_index) # t, c
             for _ in range(n):
-                relative_index += [(index - center_index[i] + self.max_len//2).item() for index in index_list[i]]
-        # b, f_l, c, h, w = x.size()
-        x = x + self.pe[:, relative_index].view(b, n, t, c)
-        # x = x + self.pe[:, relative_index]
-        return self.dropout(x)
+                pe_list.append(emb) # b*n, t, c
+        pe = torch.stack(pe_list, dim=0).view(b, n, t, c) # b, n, t, c
+
+        return self.dropout(x + pe)
 
 class InpaintGenerator(BaseNetwork):
     def __init__(self, device=None, dtype=None, init_weights=True, model_path=None):
@@ -369,7 +364,7 @@ class InpaintGenerator(BaseNetwork):
         self.pos_embed = nn.Parameter(torch.zeros(1, 20*36, d_model))
 
         # temporal pos encoder
-        self.temp_pos_encoder = TemporalPositionalEncoding(d_model, dropout=tempos_droprate) # channel * image_height//12 * image_width // 12
+        self.temp_pos_encoder = TemporalPositionalEmbedding(d_model, dropout=tempos_droprate) # channel * image_height//12 * image_width // 12
 
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depths)]  # stochastic depth decay rule
         inter_dpr = [0.0] + dpr

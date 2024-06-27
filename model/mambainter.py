@@ -210,11 +210,11 @@ class BidirectionalPropagation(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self):
+    def __init__(self, input_channel=5, output_channel=128):
         super(Encoder, self).__init__()
         self.group = [1, 2, 4, 8, 1]
         self.layers = nn.ModuleList([
-            nn.Conv2d(5, 64, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(input_channel, 64, kernel_size=3, stride=2, padding=1),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
             nn.LeakyReLU(0.2, inplace=True),
@@ -230,7 +230,7 @@ class Encoder(nn.Module):
             nn.LeakyReLU(0.2, inplace=True),
             nn.Conv2d(640, 256, kernel_size=3, stride=1, padding=1, groups=8),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(512, 128, kernel_size=3, stride=1, padding=1, groups=1),
+            nn.Conv2d(512, output_channel, kernel_size=3, stride=1, padding=1, groups=1),
             nn.LeakyReLU(0.2, inplace=True)
         ])
 
@@ -309,9 +309,10 @@ class InpaintGenerator(BaseNetwork):
         super(InpaintGenerator, self).__init__()
         channel = 128
         hidden = 512
+        dynamic_channel = hidden // 4
 
         # encoder
-        self.encoder = Encoder()
+        self.encoder = Encoder(input_channel=5, output_channel=channel)
 
         # decoder
         self.decoder = nn.Sequential(
@@ -322,6 +323,14 @@ class InpaintGenerator(BaseNetwork):
             deconv(64, 64, kernel_size=3, padding=1),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Conv2d(64, 3, kernel_size=3, stride=1, padding=1))
+        
+        # visual dynamics
+        # self.dynamic_encoder = Encoder(input_channel=6, output_channel=dynamic_channel)
+        self.dynamic_encoder = nn.Sequential(
+            Encoder(input_channel=6, output_channel=channel),
+            nn.Linear(channel, dynamic_channel)
+        )
+        
 
         # soft split and soft composition
         kernel_size = (7, 7)
@@ -346,7 +355,7 @@ class InpaintGenerator(BaseNetwork):
         # Mamba blocks
         factory_kwargs = {"device": device, "dtype": dtype} # follow MambaLMHeadModel
 
-        d_model = hidden
+        d_model = hidden + dynamic_channel
         tempos_droprate = 0.1
         drop_path_rate=0.1
         ssm_cfg=None
@@ -469,7 +478,7 @@ class InpaintGenerator(BaseNetwork):
 
         return hidden_states
 
-    def forward(self, masked_frames, completed_flows, masks_in, masks_updated, num_local_frames, index_list, index_mask, interpolation='bilinear', t_dilation=2):
+    def forward(self, masked_frames, completed_flows, masks_in, masks_updated, frame_diff, mask_diff, num_local_frames, index_list, index_mask, interpolation='bilinear', t_dilation=2):
         """
         Args:
             masks_in: original mask
@@ -518,6 +527,10 @@ class InpaintGenerator(BaseNetwork):
         trans_feat = self.ss(enc_feat.view(-1, c, h, w), b, fold_feat_size)
         mask_pool_l = rearrange(mask_pool_l, 'b t c h w -> b t h w c').contiguous()
         _, _, _h, _w, _c = trans_feat.size()
+        print(enc_feat.size(), trans_feat.size())
+        flows = torch.stack([completed_flows[0], completed_flows[0]], dim=1).permute(0, 2, 1, 3, 4, 5)
+        print(flows.size(), frame_diff.size(), mask_diff.size())
+        assert False
         trans_feat = self.forward_features(trans_feat, _index_list, _index_mask) # Mamba forward
         trans_feat = trans_feat.view(b, -1, _h, _w, _c)
         trans_feat = self.sc(trans_feat, t, fold_feat_size)

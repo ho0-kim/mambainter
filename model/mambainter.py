@@ -281,7 +281,8 @@ class TemporalPositionalEmbedding(nn.Module):
             nn.Linear(1, d_model//4),
             nn.Linear(d_model//4, d_model))
 
-        trunc_normal_(self.t_pos_emb, std=.02)
+        trunc_normal_(self.t_pos_emb[0].weight, std=.02)
+        trunc_normal_(self.t_pos_emb[1].weight, std=.02)
 
     def forward(self, x, index_list, index_mask):
         b, n, t, c = x.size() # x: torch.Size([batch_size, seq_length, 20, 36, 512])
@@ -291,8 +292,8 @@ class TemporalPositionalEmbedding(nn.Module):
         
         pe_list = []
         for i in range(b):
-            relative_index = [(index - center_index[i]).item() for index in index_list[i]] # t
-            emb = self.t_pos_emb(relative_index) # t, c
+            relative_index = [[(index - center_index[i]).item()] for index in index_list[i]] # t
+            emb = self.t_pos_emb(torch.tensor(relative_index, device=x.device, dtype=x.dtype)) # t, c
             for _ in range(n):
                 pe_list.append(emb) # b*n, t, c
         pe = torch.stack(pe_list, dim=0).view(b, n, t, c) # b, n, t, c

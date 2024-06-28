@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 
-from einops import rearrange
+from einops import rearrange, repeat
 
 from model.modules.base_module import BaseNetwork
 from model.modules.sparse_transformer import TemporalSparseTransformerBlock, SoftSplit, SoftComp
@@ -294,9 +294,9 @@ class TemporalPositionalEmbedding(nn.Module):
         for i in range(b):
             relative_index = [[(index - center_index[i]).item()] for index in index_list[i]] # t
             emb = self.t_pos_emb(torch.tensor(relative_index, device=x.device, dtype=x.dtype)) # t, c
-            for _ in range(n):
-                pe_list.append(emb) # b*n, t, c
-        pe = torch.stack(pe_list, dim=0).view(b, n, t, c) # b, n, t, c
+            emb = repeat(emb, 't c -> n t c', n=n)
+            pe_list.append(emb)
+        pe = torch.stack(pe_list, dim=0) # b, n, t, c
 
         return self.dropout(x + pe)
 

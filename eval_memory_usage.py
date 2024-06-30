@@ -15,13 +15,13 @@ def model_summarize(model, examples):
 
   # Run model
   if isinstance(model, ProPainter):
-    pred_img = model(examples[0], examples[1], examples[2], examples[3], examples[4])
+    pred_img = model(examples[0], examples[1], examples[2], examples[3], examples[6])
   elif isinstance(model, Mambainter):
-    pred_img = model(examples[0], examples[1], examples[2], examples[3], examples[4], examples[5], examples[6])
+    pred_img = model(examples[0], examples[1], examples[2], examples[3], examples[4], examples[5], examples[6], examples[7], examples[8])
 
   # Summarize model
   if isinstance(model, ProPainter):
-    torchinfo.summary(model, input_data=examples[:5])
+    torchinfo.summary(model, input_data=examples[:4] + examples[6])
   elif isinstance(model, Mambainter):
     torchinfo.summary(model, input_data=examples)
 
@@ -36,14 +36,16 @@ if __name__ == '__main__':
   # Examples
   n = 5
   l_t = 3
-  index_list = [i for i in range(n)]
-  index_mask = [False, True, True, True, False]#[True for i in range(n)]
+  index_list = [[i] for i in range(n)]
+  index_mask = [[False], [True], [True], [True], [False]]#[[True] for i in range(n)]
   selected_imgs = torch.rand((1, n, 3, 240, 432), device=device)
   selected_pred_flows_bi = torch.rand((2, 1, l_t-1, 2, 240, 432), device=device)
   selected_masks = torch.rand((1, n, 1, 240, 432), device=device)
   selected_update_masks = torch.rand((1, n, 1, 240, 432), device=device)
+  frame_diff = torch.rand((1, l_t-1, 3, 240, 432),device=device)
+  mask_diff = torch.rand((1, l_t-1, 1, 240, 432),device=device)
 
-  examples = [selected_imgs, selected_pred_flows_bi, selected_masks, selected_update_masks, l_t, index_list, index_mask]
+  examples = [selected_imgs, selected_pred_flows_bi, selected_masks, selected_update_masks, frame_diff, mask_diff, l_t, index_list, index_mask]
 
   model_summarize(model, examples)
 

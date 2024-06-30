@@ -6,7 +6,7 @@
    </a>
 </div>
 
-<h1>ProPainter: Improving Propagation and Transformer for Video Inpainting</h1>
+<h1>Mambainter: Efficient Video Inpainting with Mamba Understanding Visual Dynamics</h1>
 
 <div>
     <a href='https://shangchenzhou.com/' target='_blank'>Shangchen Zhou</a>&emsp;

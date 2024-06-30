@@ -210,11 +210,11 @@ class BidirectionalPropagation(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self):
+    def __init__(self, input_channel=5, output_channel=128):
         super(Encoder, self).__init__()
         self.group = [1, 2, 4, 8, 1]
         self.layers = nn.ModuleList([
-            nn.Conv2d(5, 64, kernel_size=3, stride=2, padding=1),
+            nn.Conv2d(input_channel, 64, kernel_size=3, stride=2, padding=1),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
             nn.LeakyReLU(0.2, inplace=True),
@@ -230,7 +230,7 @@ class Encoder(nn.Module):
             nn.LeakyReLU(0.2, inplace=True),
             nn.Conv2d(640, 256, kernel_size=3, stride=1, padding=1, groups=8),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(512, 128, kernel_size=3, stride=1, padding=1, groups=1),
+            nn.Conv2d(512, output_channel, kernel_size=3, stride=1, padding=1, groups=1),
             nn.LeakyReLU(0.2, inplace=True)
         ])
 
@@ -300,14 +300,43 @@ class TemporalPositionalEmbedding(nn.Module):
 
         return self.dropout(x + pe)
 
+class DynamicEncoder(nn.Module):
+    def __init__(self, input_channel=6, output_channel=128, kernel_size=(7, 7), padding=(3, 3), stride=(3, 3), height=240, width=432):
+        super(DynamicEncoder, self).__init__()
+        self.encoder = Encoder(input_channel=input_channel, output_channel=128)
+        self.local_encoder = SoftSplit(128, output_channel//2, kernel_size, stride, padding)
+        self.global_encoder = nn.Conv2d(128, output_channel//2, kernel_size=(height//4, width//4))
+
+    def forward(self, x, batch_size, output_size):
+        x = self.encoder(x)
+
+        local_feat = self.local_encoder(x, batch_size, output_size)
+        b, t, h, w, c = local_feat.size()
+        
+        global_feat = self.global_encoder(x).squeeze()
+        global_feat = repeat(global_feat, 'bt c -> bt h w c', h=h, w=w).view(b, t, h, w, c)
+
+        x = torch.concat([local_feat, global_feat], dim=-1).view(b*t, h, w, -1)
+        _feats = []
+        for i in range(b*(t+1)):
+            if i%(t+1) == 0:
+                _feats.append(x[i])
+            elif i%(t+1) == t:
+                _feats.append(x[i-1])
+            else:
+                _feats.append((x[i-1] + x[i]) / 2)
+
+        return torch.stack(_feats, dim=0).view(b, t+1, h, w, -1)
+
 class InpaintGenerator(BaseNetwork):
-    def __init__(self, device=None, dtype=None, init_weights=True, model_path=None):
+    def __init__(self, device=None, dtype=None, init_weights=True, model_path=None, height=240, width=432):
         super(InpaintGenerator, self).__init__()
         channel = 128
         hidden = 512
+        dynamic_channel = hidden // 8
 
         # encoder
-        self.encoder = Encoder()
+        self.encoder = Encoder(input_channel=5, output_channel=channel)
 
         # decoder
         self.decoder = nn.Sequential(
@@ -318,6 +347,10 @@ class InpaintGenerator(BaseNetwork):
             deconv(64, 64, kernel_size=3, padding=1),
             nn.LeakyReLU(0.2, inplace=True),
             nn.Conv2d(64, 3, kernel_size=3, stride=1, padding=1))
+        
+        # visual dynamics
+        self.dynamic_encoder = DynamicEncoder(input_channel=6, output_channel=dynamic_channel, height=height, width=width)
+        
 
         # soft split and soft composition
         kernel_size = (7, 7)
@@ -329,7 +362,7 @@ class InpaintGenerator(BaseNetwork):
             'padding': padding
         }
         self.ss = SoftSplit(channel, hidden, kernel_size, stride, padding)
-        self.sc = SoftComp(channel, hidden, kernel_size, stride, padding)
+        self.sc = SoftComp(channel, hidden+dynamic_channel, kernel_size, stride, padding)
         self.max_pool = nn.MaxPool2d(kernel_size, stride, padding)
 
         # feature propagation module
@@ -342,7 +375,7 @@ class InpaintGenerator(BaseNetwork):
         # Mamba blocks
         factory_kwargs = {"device": device, "dtype": dtype} # follow MambaLMHeadModel
 
-        d_model = hidden
+        d_model = hidden + dynamic_channel
         tempos_droprate = 0.1
         drop_path_rate=0.1
         ssm_cfg=None
@@ -465,7 +498,7 @@ class InpaintGenerator(BaseNetwork):
 
         return hidden_states
 
-    def forward(self, masked_frames, completed_flows, masks_in, masks_updated, num_local_frames, index_list, index_mask, interpolation='bilinear', t_dilation=2):
+    def forward(self, masked_frames, completed_flows, masks_in, masks_updated, frame_diff, mask_diff, num_local_frames, index_list, index_mask, interpolation='bilinear', t_dilation=2):
         """
         Args:
             masks_in: original mask
@@ -474,7 +507,7 @@ class InpaintGenerator(BaseNetwork):
 
         l_t = num_local_frames
         b, t, _, ori_h, ori_w = masked_frames.size()
-        # HOYOUNG
+        
         _index_mask = np.array(index_mask).transpose()
         _index_list = np.array(index_list).transpose()
         _local_index = np.where(_index_mask)
@@ -504,22 +537,35 @@ class InpaintGenerator(BaseNetwork):
             mask_pool_l = self.max_pool(ds_mask_in_local.view(-1, 1, h, w))
             mask_pool_l = mask_pool_l.view(b, l_t, 1, mask_pool_l.size(-2), mask_pool_l.size(-1))
 
-
+        # feature propagation
         prop_mask_in = torch.cat([ds_mask_in_local, ds_mask_updated_local], dim=2)
         _, _, local_feat, _ = self.feat_prop_module(local_feat, ds_flows_f, ds_flows_b, prop_mask_in, interpolation)
         
         enc_feat = enc_feat.view(b, t, c, h, w).clone()
         enc_feat[_local_index[0], _local_index[1], ...] = local_feat.view(b*l_t, c, h, w)
 
-        trans_feat = self.ss(enc_feat.view(-1, c, h, w), b, fold_feat_size)
+        # Soft Split
+        mamba_feat = self.ss(enc_feat.view(-1, c, h, w), b, fold_feat_size)
         mask_pool_l = rearrange(mask_pool_l, 'b t c h w -> b t h w c').contiguous()
-        _, _, _h, _w, _c = trans_feat.size()
-        trans_feat = self.forward_features(trans_feat, _index_list, _index_mask) # Mamba forward
-        trans_feat = trans_feat.view(b, -1, _h, _w, _c)
-        trans_feat = self.sc(trans_feat, t, fold_feat_size)
-        trans_feat = trans_feat.view(b, t, -1, h, w)
+        _, _, _h, _w, _ = mamba_feat.size()
 
-        enc_feat = enc_feat + trans_feat
+        # Dynamic Features
+        dyn_feat = torch.cat([completed_flows[0], frame_diff, mask_diff], dim=2).view(b * (l_t-1), 6, ori_h, ori_w)
+        dyn_feat_l = self.dynamic_encoder(dyn_feat, b, fold_feat_size) # extract dynamics in neighboring frames
+        dyn_feat = repeat(dyn_feat_l.mean(dim=1), 'b h w c -> b t h w c', t=t).clone() # copy average dynamics for reference frames
+        dyn_feat[_local_index[0], _local_index[1], ...] = dyn_feat_l.view(b*l_t, _h, _w, -1)
+        mamba_feat = torch.concat([mamba_feat, dyn_feat], dim=-1)
+        _, _, _h, _w, _c = mamba_feat.size()
+
+        # Mamba forward
+        mamba_feat = self.forward_features(mamba_feat, _index_list, _index_mask)
+        mamba_feat = mamba_feat.view(b, -1, _h, _w, _c)
+
+        # Soft Composite
+        mamba_feat = self.sc(mamba_feat, t, fold_feat_size)
+        mamba_feat = mamba_feat.view(b, t, -1, h, w)
+
+        enc_feat = enc_feat + mamba_feat
 
         if self.training:
             output = self.decoder(enc_feat.view(-1, c, h, w))

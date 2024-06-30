@@ -22,7 +22,6 @@ from model.recurrent_flow_completion import RecurrentFlowCompleteNet
 
 from RAFT.utils.flow_viz_pt import flow_to_image
 
-#HOYOUNG
 import numpy as np
 torch.autograd.set_detect_anomaly(True)
 
@@ -388,8 +387,15 @@ class Trainer:
             prop_local_frames = gt_local_frames * (1-local_masks) + prop_imgs.view(b, l_t, 3, h, w) * local_masks # merge
             updated_frames[_local_index[0], _local_index[1], ...] = prop_local_frames.view(b*l_t, 3, h, w)
 
+            # ---- dynamics information ----
+            # .... pixel difference ....
+            frame_diff = gt_local_frames.diff(dim=1)
+            
+            # .... mask difference ....
+            mask_diff = local_masks.diff(dim=1)
+
             # ---- feature propagation + Transformer ----
-            pred_imgs = self.netG(updated_frames, pred_flows_bi, masks, updated_masks, l_t, selected_index, selected_idxmask)
+            pred_imgs = self.netG(updated_frames, pred_flows_bi, masks, updated_masks, frame_diff, mask_diff, l_t, selected_index, selected_idxmask)
             pred_imgs = pred_imgs.view(b, -1, c, h, w)
 
             # get the local frames

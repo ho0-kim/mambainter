@@ -119,7 +119,7 @@
 
    ```bash
    # create new anaconda env
-   conda create -n mambainter python=3.8 -y
+   conda create -n mambainter python=3.9 -y
    conda activate mambainter
 
    # install python dependencies

@@ -319,12 +319,13 @@ class DynamicEncoder(nn.Module):
         x = torch.concat([local_feat, global_feat], dim=-1).view(b*t, h, w, -1)
         _feats = []
         for i in range(b*(t+1)):
+            b_i = i//(t+1)
             if i%(t+1) == 0:
-                _feats.append(x[i])
+                _feats.append(x[i-b_i])
             elif i%(t+1) == t:
-                _feats.append(x[i-1])
+                _feats.append(x[i-1-b_i])
             else:
-                _feats.append((x[i-1] + x[i]) / 2)
+                _feats.append((x[i-1-b_i] + x[i-b_i]) / 2)
 
         return torch.stack(_feats, dim=0).view(b, t+1, h, w, -1)
 

@@ -396,7 +396,7 @@ class InpaintGenerator(BaseNetwork):
         self.checkpoint_num = checkpoint_num
         
         # positional embedding
-        self.pos_embed = nn.Parameter(torch.zeros(1, 20*36, d_model))
+        self.pos_embed = nn.Parameter(torch.zeros(1, height//12*width//12, d_model))
 
         # temporal pos encoder
         self.temp_pos_encoder = TemporalPositionalEmbedding(d_model, dropout=tempos_droprate) # channel * image_height//12 * image_width // 12

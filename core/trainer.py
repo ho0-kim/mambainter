@@ -85,7 +85,7 @@ class Trainer:
 
         # setup models including generator and discriminator
         net = importlib.import_module('model.' + config['model']['net'])
-        self.netG = net.InpaintGenerator()
+        self.netG = net.InpaintGenerator(height=config['train_data_loader']['h'], width=config['train_data_loader']['w'])
         # print(self.netG)
         self.netG = self.netG.to(self.config['device'])
         if not self.config['model'].get('no_dis', False):

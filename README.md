@@ -1,71 +1,6 @@
 <div align="center">
 
-<div class="logo">
-   <a href="https://shangchenzhou.com/projects/ProPainter/">
-      <img src="assets/propainter_logo1_glow.png" style="width:180px">
-   </a>
-</div>
-
 <h1>Mambainter: Efficient Video Inpainting with Mamba Understanding Visual Dynamics</h1>
-
-<div>
-    <a href='https://shangchenzhou.com/' target='_blank'>Shangchen Zhou</a>&emsp;
-    <a href='https://li-chongyi.github.io/' target='_blank'>Chongyi Li</a>&emsp;
-    <a href='https://ckkelvinchan.github.io/' target='_blank'>Kelvin C.K. Chan</a>&emsp;
-    <a href='https://www.mmlab-ntu.com/person/ccloy/' target='_blank'>Chen Change Loy</a>
-</div>
-<div>
-    S-Lab, Nanyang Technological University&emsp; 
-</div>
-
-<div>
-    <strong>ICCV 2023</strong>
-</div>
-
-<div>
-    <h4 align="center">
-        <a href="https://shangchenzhou.com/projects/ProPainter" target='_blank'>
-        <img src="https://img.shields.io/badge/🐳-Project%20Page-blue">
-        </a>
-        <a href="https://arxiv.org/abs/2309.03897" target='_blank'>
-        <img src="https://img.shields.io/badge/arXiv-2309.03897-b31b1b.svg">
-        </a>
-        <a href="https://youtu.be/92EHfgCO5-Q" target='_blank'>
-        <img src="https://img.shields.io/badge/Demo%20Video-%23FF0000.svg?logo=YouTube&logoColor=white">
-        </a>
-        <a href="https://huggingface.co/spaces/sczhou/ProPainter" target='_blank'>
-        <img src="https://img.shields.io/badge/Demo-%F0%9F%A4%97%20Hugging%20Face-blue">
-        </a>
-        <a href="https://openxlab.org.cn/apps/detail/ShangchenZhou/ProPainter" target='_blank'>
-        <img src="https://img.shields.io/badge/Demo-%F0%9F%91%A8%E2%80%8D%F0%9F%8E%A8%20OpenXLab-blue">
-        </a>
-        <img src="https://api.infinitescript.com/badgen/count?name=sczhou/ProPainter">
-    </h4>
-</div>
-
-⭐ If ProPainter is helpful to your projects, please help star this repo. Thanks! 🤗
-
-:open_book: For more visual results, go checkout our <a href="https://shangchenzhou.com/projects/ProPainter/" target="_blank">project page</a>
-
-
----
-
-</div>
-
-
-## Update
-- **2023.11.09**: Integrated to :man_artist: [OpenXLab](https://openxlab.org.cn/apps). Try out online demo! [![OpenXLab](https://img.shields.io/badge/Demo-%F0%9F%91%A8%E2%80%8D%F0%9F%8E%A8%20OpenXLab-blue)](https://openxlab.org.cn/apps/detail/ShangchenZhou/ProPainter)
-- **2023.11.09**: Integrated to :hugs: [Hugging Face](https://huggingface.co/spaces). Try out online demo! [![Hugging Face](https://img.shields.io/badge/Demo-%F0%9F%A4%97%20Hugging%20Face-blue)](https://huggingface.co/spaces/sczhou/ProPainter)
-- **2023.09.24**: We remove the watermark removal demos officially to prevent the misuse of our work for unethical purposes.
-- **2023.09.21**: Add features for memory-efficient inference. Check our [GPU memory](https://github.com/sczhou/ProPainter#-memory-efficient-inference) requirements. 🚀
-- **2023.09.07**: Our code and model are publicly available. 🐳
-- **2023.09.01**: This repo is created.
-
-
-### TODO
-- [ ] Make a Colab demo.
-- [x] ~~Make a interactive Gradio demo.~~
-- [x] ~~Update features for memory-efficient inference.~~
   
 ## Results
 
@@ -100,11 +35,6 @@
    </td>
 </tr>
 </table>
-
-
-
-## Overview
-![overall_structure](assets/ProPainter_pipeline.png)
 
 
 ## Dependencies and Installation
@@ -255,6 +185,8 @@ Run one of the following commands for training:
  python train.py -c configs/train_flowcomp.json
  # For training ProPainter
  python train.py -c configs/train_propainter.json
+ # For training Mambainter
+ python train.py -c configs/train_mambainter.json
 ```
 You can run the **same command** to **resume** your training.
 

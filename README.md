@@ -1,7 +1,9 @@
 <div align="center">
 
 <h1>Mambainter: Efficient Video Inpainting with Mamba Understanding Visual Dynamics</h1>
-  
+
+</div>
+
 ## Results
 
 #### 👨🏻‍🎨 Object Removal
